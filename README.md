@@ -1,86 +1,172 @@
-Account Abstraction with Skandha V1 & EntryPoint v0.6
-This repository contains a complete implementation for deploying an ERC-4337 Smart Account and sending UserOperations to a local Skandha Bundler on the Sepolia testnet.
+# ERC-4337 Smart Account with Skandha V1
 
-📋 Prerequisites
-Before starting, ensure you have the following installed:
+> Account Abstraction on Ethereum Sepolia — using a custom Smart Account Factory and the Skandha Bundler (EntryPoint v0.6)
 
-Node.js (v18 or v20 LTS recommended)
+[![Solidity](https://img.shields.io/badge/Solidity-^0.8-363636?logo=solidity)](https://soliditylang.org/)
+[![Hardhat](https://img.shields.io/badge/Built%20with-Hardhat-f7dc6f?logo=ethereum)](https://hardhat.org/)
+[![EntryPoint](https://img.shields.io/badge/EntryPoint-v0.6-blue)](https://eips.ethereum.org/EIPS/eip-4337)
+[![Network](https://img.shields.io/badge/Network-Sepolia-purple)](https://sepolia.etherscan.io/)
 
-Bun (for fast installation and execution)
+---
 
-An Ethereum RPC Provider (Alchemy, Infura, or Public Node)
+## Overview
 
-🛠 1. Skandha Bundler Setup (EntryPoint v0.6)
-Skandha V1 is the specialized version for EntryPoint 0.6.0. Follow these "bulletproof" steps to avoid module errors.
+This repository demonstrates a complete [ERC-4337](https://eips.ethereum.org/EIPS/eip-4337) Account Abstraction workflow:
 
-Clone and Install
-Bash
-# 1. Clone and switch to the correct branch for EntryPoint 0.6.0
+- Deploying a custom **Smart Account** and **Smart Account Factory** to Sepolia
+- Running a local **Skandha Bundler** (EntryPoint v0.6.0)
+- Constructing, signing, and dispatching **UserOperations** via raw JSON-RPC
+
+---
+
+## Prerequisites
+
+| Requirement | Notes |
+|---|---|
+| **Node.js** v18 or v20 LTS | Node v22+ may break older OpenSSL deps in Skandha v1 |
+| **Bun** | Used for fast dependency installation |
+| **Ethereum RPC Provider** | Alchemy, Infura, or any Sepolia public node |
+
+---
+
+## 1. Skandha Bundler Setup (EntryPoint v0.6.0)
+
+> **Recommended approach:** Use **Bun** for installation and **Node.js** for execution to avoid module resolution errors.
+
+### Clone & Build
+
+```bash
+# Clone Skandha and switch to the EntryPoint v0.6 branch
 git clone https://github.com/etherspot/skandha
 cd skandha
 git checkout releases/v0.6
 
-# 2. Install dependencies using Bun
+# Install dependencies with Bun
 bun install
 
-# 3. Build the project into standard Javascript
+# Compile to standard JavaScript (prevents runtime TypeScript errors)
 bun run build
 
-# 4. Bootstrap the monorepo (links internal packages)
+# Bootstrap the monorepo (links internal packages)
 bun run bootstrap
-Configuration
-Create your config.json by copying the default:
+```
 
-Bash
+### Configure
+
+Copy the default config and fill in your details:
+
+```bash
 cp config.json.default config.json
-Edit config.json and ensure it matches the following structure (replace rpcEndpoint with your provider URL):
+```
 
-JSON
+Edit `config.json`:
+
+```json
 {
   "entryPoints": [
     "0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789"
   ],
   "relayers": [
-    "relayer private key"
+    "YOUR_RELAYER_PRIVATE_KEY"
   ],
-  "beneficiary": "benifiery acc address",
-  "rpcEndpoint": "https://sepolia.infura.io/v3/YOUR_KEY",
+  "beneficiary": "YOUR_BENEFICIARY_ADDRESS",
+  "rpcEndpoint": "https://sepolia.infura.io/v3/YOUR_INFURA_KEY",
   "minInclusionDenominator": 10,
   "throttlingSlack": 10,
   "banSlack": 10,
   "bundleInterval": 2000,
   "bundleSize": 5
 }
-Note: bundleInterval: 2000 tells the bundler to wait 2 seconds to batch multiple operations before sending them to the network.
+```
 
-Run the Bundler
-Bash
+> **Tip:** `bundleInterval: 2000` introduces a 2-second batching window, allowing the bundler to group multiple UserOperations into a single on-chain transaction.
+
+### Start the Bundler
+
+```bash
 bun packages/cli/bin/skandha.js standalone
-🚀 2. Smart Account Deployment
-Now, return to this project directory to deploy your contracts to Sepolia.
+```
 
-Bash
-# Install project dependencies
-npm install
+---
 
-# Deploy Smart Account and Factory
+## 2. Deploy Contracts
+
+Switch back to this project's directory and deploy to Sepolia:
+
+```bash
 npx hardhat run scripts/deploy.ts --network sepolia
-Take note of the Factory Address printed in the console.
+```
 
-⛽ 3. Sending a User Operation
-The test4331.ts script handles the complex logic of constructing the UserOperation, signing it with your EOA, and dispatching it to Skandha via Axios.
+This deploys both the **Smart Account Factory** and an initial **Smart Account** instance.
 
-Why we use Axios & Hex Strings:
-Axios: Standard Ethers providers don't always support the custom eth_sendUserOperation RPC method. Axios sends a raw JSON-RPC POST request directly to the Bundler.
+---
 
-Hex Conversion: The Bundler API follows strict JSON-RPC specs. JavaScript BigInt values must be converted to 0x-prefixed hex strings to be serialized correctly.
+## 3. Send a UserOperation
 
-Execute the Operation:
-Bash
+```bash
 npx hardhat run scripts/test4331.ts --network sepolia
-🔗 Project Details
-EntryPoint: 0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789 (v0.6)
+```
 
-Bundler URL: http://127.0.0.1:14337/rpc
+This script:
+1. Constructs the `UserOperation` struct
+2. Signs it with your EOA private key
+3. Sends it to the local Skandha bundler using a raw `eth_sendUserOperation` JSON-RPC call via Axios
 
-Repo: Harish4586/smartAccount-skandhaV1-EntrypointV0.6
+---
+
+## Key Technical Notes
+
+**Axios for JSON-RPC**
+Standard `ethers` providers do not expose native wrappers for `eth_sendUserOperation`. Raw Axios POST requests are used instead for direct bundler communication.
+
+**Hex Encoding**
+All `BigInt` values — gas limits, fees, nonces — must be converted to hex strings (e.g., `0x1a`) to comply with the Ethereum JSON-RPC specification.
+
+**EntryPoint Address (v0.6)**
+```
+0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789
+```
+
+---
+
+## Quick Workflow Summary
+
+```
+1. Clone Skandha → git checkout releases/v0.6
+2. bun install
+3. bun run build && bun run bootstrap
+4. Configure config.json (RPC endpoint + relayer key)
+5. bun packages/cli/bin/skandha.js standalone
+6. npx hardhat run scripts/deploy.ts --network sepolia
+7. npx hardhat run scripts/test4331.ts --network sepolia
+```
+
+---
+
+## Project Structure
+
+```
+.
+├── contracts/
+│   ├── SmartAccount.sol        # ERC-4337 compatible smart account
+│   └── SmartAccountFactory.sol # Factory for deploying smart accounts
+├── scripts/
+│   ├── deploy.ts               # Deploys factory and account to Sepolia
+│   └── test4331.ts             # Builds and sends a UserOperation
+├── hardhat.config.ts
+└── package.json
+```
+
+---
+
+## Resources
+
+- [ERC-4337 Specification](https://eips.ethereum.org/EIPS/eip-4337)
+- [Skandha Bundler](https://github.com/etherspot/skandha)
+- [This Repository](https://github.com/Harish4586/smartAccount-skandhaV1-EntrypointV0.6)
+
+---
+
+## License
+
+MIT
