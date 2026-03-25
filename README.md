@@ -104,7 +104,7 @@ This deploys both the **Smart Account Factory** and an initial **Smart Account**
 ## 3. Send a UserOperation
 
 ```bash
-npx hardhat run scripts/test4331.ts --network sepolia
+npx hardhat run scripts/test4337.ts --network sepolia
 ```
 
 This script:
@@ -138,7 +138,7 @@ All `BigInt` values — gas limits, fees, nonces — must be converted to hex st
 4. Configure config.json (RPC endpoint + relayer key)
 5. bun packages/cli/bin/skandha.js standalone
 6. npx hardhat run scripts/deploy.ts --network sepolia
-7. npx hardhat run scripts/test4331.ts --network sepolia
+7. npx hardhat run scripts/test4337.ts --network sepolia
 ```
 
 ---
@@ -147,14 +147,28 @@ All `BigInt` values — gas limits, fees, nonces — must be converted to hex st
 
 ```
 .
+├── artifacts/                  # Hardhat compilation artifacts
+├── cache/                      # Hardhat cache
 ├── contracts/
+│   ├── BaseAccount.sol         # Abstract base account logic
+│   ├── Interfaces.sol          # Shared interfaces (IEntryPoint, etc.)
 │   ├── SmartAccount.sol        # ERC-4337 compatible smart account
-│   └── SmartAccountFactory.sol # Factory for deploying smart accounts
+│   ├── SmartAccountFactory.sol # Factory for deploying smart accounts
+│   └── UserOperation.sol       # UserOperation struct & helpers
+├── ignition/                   # Hardhat Ignition deployment modules
 ├── scripts/
 │   ├── deploy.ts               # Deploys factory and account to Sepolia
-│   └── test4331.ts             # Builds and sends a UserOperation
+│   └── test4337.ts             # Builds, signs & sends a UserOperation
+├── skandha/                    # Skandha bundler (submodule / local clone)
+├── test/                       # Contract test files
+├── types/                      # TypeScript type definitions
+├── .env                        # Environment variables (never commit this)
+├── .gitignore
 ├── hardhat.config.ts
-└── package.json
+├── package.json
+├── package-lock.json
+├── README.md
+└── tsconfig.json
 ```
 
 ---
