@@ -140,21 +140,23 @@ async function main() {
 main().catch(console.error);
 
 
-/**
- * npx hardhat run scripts/deploy.ts --network sepol
-ia
+// /**
+//  * npx hardhat run scripts/deploy.ts --network sepol
+// ia
 
-EOA: 0x878344AF84A404439Ea37cFB9b30DeFd7938741C
-Factory: 0x8d6409753A2c4F2790b992fD00db897731dEA012
-Predicted SmartAccount: 0xD73e74C58C6593B1070bA4561b2fbd2746b3d29b
-Deploying SmartAccount...
-SmartAccount deployed
-Depositing 0.01 ETH...
-Deposit complete
+// EOA: 0x878344AF84A404439Ea37cFB9b30DeFd7938741C
+// Factory: 0x8d6409753A2c4F2790b992fD00db897731dEA012
+// Predicted SmartAccount: 0xD73e74C58C6593B1070bA4561b2fbd2746b3d29b
+// Deploying SmartAccount...
+// SmartAccount deployed
+// Depositing 0.01 ETH...
+// Deposit complete
 
-DONE
-Factory: 0x8d6409753A2c4F2790b992fD00db897731dEA012
-SmartAccount: 0xD73e74C58C6593B1070bA4561b2fbd2746b3d29b
-harish@harish-Vostro:~/Desktop/v0.6$ 
- * 
- */
+// DONE
+// Factory: 0x8d6409753A2c4F2790b992fD00db897731dEA012
+// SmartAccount: 0xD73e74C58C6593B1070bA4561b2fbd2746b3d29b
+// PayMaster: 0xEDb1cE51Bb33640EC64207F158bdA398cF471dd1
+// harish@harish-Vostro:~/Desktop/v0.6$ 
+//  * 
+//  */
+

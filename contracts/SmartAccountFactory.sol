@@ -5,7 +5,7 @@ import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import "@openzeppelin/contracts/utils/Create2.sol";
 
 import "./SmartAccount.sol";
-import "./Interfaces.sol";
+import "./Interfaces.sol"; 
 
 contract SmartAccountFactory {
 

@@ -1,21 +1,23 @@
-# ERC-4337 Smart Account with Skandha V1
+# ERC-4337 Smart Account with Skandha V1 + Paymaster
 
-> Account Abstraction on Ethereum Sepolia — using a custom Smart Account Factory and the Skandha Bundler (EntryPoint v0.6)
+> Account Abstraction on Ethereum Sepolia — using a custom Smart Account Factory, a Verifying Paymaster, and the Skandha Bundler (EntryPoint v0.6)
 
 [![Solidity](https://img.shields.io/badge/Solidity-^0.8-363636?logo=solidity)](https://soliditylang.org/)
 [![Hardhat](https://img.shields.io/badge/Built%20with-Hardhat-f7dc6f?logo=ethereum)](https://hardhat.org/)
 [![EntryPoint](https://img.shields.io/badge/EntryPoint-v0.6-blue)](https://eips.ethereum.org/EIPS/eip-4337)
 [![Network](https://img.shields.io/badge/Network-Sepolia-purple)](https://sepolia.etherscan.io/)
+[![AA Contracts](https://img.shields.io/badge/@account--abstraction%2Fcontracts-0.6.0-green)](https://www.npmjs.com/package/@account-abstraction/contracts)
 
 ---
 
 ## Overview
 
-This repository demonstrates a complete [ERC-4337](https://eips.ethereum.org/EIPS/eip-4337) Account Abstraction workflow:
+This repository demonstrates a complete [ERC-4337](https://eips.ethereum.org/EIPS/eip-4337) Account Abstraction workflow, now extended with a **production-level Verifying Paymaster** that sponsors gas fees on behalf of users:
 
 - Deploying a custom **Smart Account** and **Smart Account Factory** to Sepolia
+- Deploying a **Custom Verifying Paymaster** compatible with EntryPoint v0.6
 - Running a local **Skandha Bundler** (EntryPoint v0.6.0)
-- Constructing, signing, and dispatching **UserOperations** via raw JSON-RPC
+- Constructing, signing, and dispatching **sponsored UserOperations** via raw JSON-RPC
 
 ---
 
@@ -26,6 +28,13 @@ This repository demonstrates a complete [ERC-4337](https://eips.ethereum.org/EIP
 | **Node.js** v18 or v20 LTS | Node v22+ may break older OpenSSL deps in Skandha v1 |
 | **Bun** | Used for fast dependency installation |
 | **Ethereum RPC Provider** | Alchemy, Infura, or any Sepolia public node |
+| **@account-abstraction/contracts v0.6.0** | Must use this exact version — compatible with EntryPoint v0.6 and Skandha v1 |
+
+> **Important:** Install the AA contracts package with:
+> ```bash
+> npm install @account-abstraction/contracts@0.6.0
+> ```
+> This version exposes the correct `UserOperation` struct layout (with the single `paymasterAndData` bytes field) and the matching `IPaymaster` / `IEntryPoint` interfaces for EntryPoint v0.6. Using v0.7+ will cause ABI mismatches and struct incompatibilities.
 
 ---
 
@@ -91,7 +100,7 @@ bun packages/cli/bin/skandha.js standalone
 
 ## 2. Deploy Contracts
 
-Switch back to this project's directory and deploy to Sepolia:
+### Deploy Smart Account + Factory
 
 ```bash
 npx hardhat run scripts/deploy.ts --network sepolia
@@ -99,28 +108,134 @@ npx hardhat run scripts/deploy.ts --network sepolia
 
 This deploys both the **Smart Account Factory** and an initial **Smart Account** instance.
 
+### Deploy the Paymaster
+
+```bash
+npx hardhat run scripts/deployPaymaster.ts --network sepolia
+```
+
+This deploys the `CustomPaymaster` contract and registers it with the EntryPoint. The deployment script outputs the Paymaster address — save it for the next steps.
+
 ---
 
-## 3. Send a UserOperation
+## 3. Fund & Stake the Paymaster
+
+The Paymaster requires two separate on-chain actions before Skandha will accept UserOps it sponsors:
+
+### Check Current Balance & Stake Status
+
+```bash
+npx hardhat run scripts/checkStakeAndBal.ts --network sepolia
+```
+
+This queries `entryPoint.deposits(PAYMASTER_ADDR)` and prints the current deposit balance, stake amount, and whether the Paymaster is considered staked.
+
+### Add Stake (Mandatory for Skandha)
+
+Skandha enforces reputation rules and **will reject any UserOp if the Paymaster is not staked**. You must lock a bond for a minimum of 1 day (86400 seconds):
+
+```bash
+npx hardhat run scripts/addStake.ts --network sepolia
+```
+
+This calls `addStake(86400)` on the Paymaster with a bond of at least 0.01 ETH. You also need to deposit ETH into the EntryPoint to cover gas:
+
+```bash
+# Deposit is for gas; Stake is for bundler reputation
+# Both are handled inside deployPaymaster.ts and addStake.ts
+```
+
+Expected output after staking:
+
+```
+Staking 0.01 ETH...
+SUCCESS: Stake added to EntryPoint via Paymaster.
+```
+
+---
+
+## 4. Send a Sponsored UserOperation
+
+```bash
+npx hardhat run scripts/test4337WithPaymaster.ts --network sepolia
+```
+
+This script implements the **double-signature flow** required for sponsored transactions:
+
+1. **Paymaster Signature** — Your backend signs the `getHash(userOp, validUntil, validAfter)` result. This is encoded into `paymasterAndData` as:
+   ```
+   [20 bytes: Paymaster address][6 bytes: validUntil][6 bytes: validAfter][dynamic: signature]
+   ```
+
+2. **User Signature** — The account owner signs the `userOpHash`. This goes into the `signature` field of the UserOperation.
+
+3. The fully constructed UserOp is submitted to the local Skandha bundler via `eth_sendUserOperation`.
+
+A successful response returns the UserOpHash:
+
+```
+UserOp sent to Skandha: 0x4b9d7a824a8388637d44bf8bf09486f70c08c023120cc24d348e4b3f134494cb
+```
+
+---
+
+## 5. Send a Regular (Non-Sponsored) UserOperation
 
 ```bash
 npx hardhat run scripts/test4337.ts --network sepolia
 ```
 
-This script:
-1. Constructs the `UserOperation` struct
-2. Signs it with your EOA private key
-3. Sends it to the local Skandha bundler using a raw `eth_sendUserOperation` JSON-RPC call via Axios
+This script constructs and sends a standard UserOperation **without** a Paymaster — the gas is paid directly from the Smart Account's own balance.
+
+---
+
+## Contract: CustomPaymaster.sol
+
+The Paymaster uses a **nested hashing mechanism** to avoid Solidity's "Stack too deep" compiler errors when encoding the large `UserOperation` struct.
+
+### Key design points
+
+- **EntryPoint address**: Fixed at `0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789` (v0.6)
+- **`paymasterAndData` layout** (v0.6 format):
+  ```
+  [20b: Paymaster address][6b: validUntil][6b: validAfter][dynamic: ECDSA signature]
+  ```
+- **`getHash` splits hashing into two steps** to stay within Solidity's stack depth limit
+- **Signature verification** is performed against a configurable `verifyingSigner` address
+- **`_packValidationData`** encodes `sigFailed`, `validUntil`, and `validAfter` into a single `uint256` as required by the EntryPoint
+
+```solidity
+function getHash(UserOperation calldata userOp, uint48 validUntil, uint48 validAfter)
+    public view returns (bytes32)
+{
+    bytes32 userOpHash = keccak256(abi.encode(
+        userOp.sender, userOp.nonce,
+        keccak256(userOp.initCode), keccak256(userOp.callData),
+        userOp.callGasLimit, userOp.verificationGasLimit,
+        userOp.preVerificationGas, userOp.maxFeePerGas, userOp.maxPriorityFeePerGas
+    ));
+    return keccak256(abi.encode(userOpHash, block.chainid, address(this), validUntil, validAfter));
+}
+```
 
 ---
 
 ## Key Technical Notes
 
+**`@account-abstraction/contracts@0.6.0`**
+This exact version is required. It provides the v0.6-compatible `IPaymaster`, `IEntryPoint`, and `UserOperation` struct. The v0.7 packages split `paymasterAndData` into four separate fields and use a different `getDepositInfo` naming convention — these are incompatible with Skandha v1.
+
+**`viaIR: true` in Hardhat config**
+Required when compiling contracts that hash the full `UserOperation` struct. Without it, Solidity 0.8.x will throw "Stack too deep" errors.
+
 **Axios for JSON-RPC**
-Standard `ethers` providers do not expose native wrappers for `eth_sendUserOperation`. Raw Axios POST requests are used instead for direct bundler communication.
+Standard `ethers` providers do not expose native wrappers for `eth_sendUserOperation`. Raw Axios POST requests are used for direct bundler communication.
 
 **Hex Encoding**
 All `BigInt` values — gas limits, fees, nonces — must be converted to hex strings (e.g., `0x1a`) to comply with the Ethereum JSON-RPC specification.
+
+**`entryPoint.deposits(address)` vs `getDepositInfo`**
+In v0.6, use `entryPoint.deposits(address)` to query stake/balance info. `getDepositInfo` is a v0.7 naming convention and will fail against the v0.6 EntryPoint.
 
 **EntryPoint Address (v0.6)**
 ```
@@ -132,13 +247,23 @@ All `BigInt` values — gas limits, fees, nonces — must be converted to hex st
 ## Quick Workflow Summary
 
 ```
-1. Clone Skandha → git checkout releases/v0.6
-2. bun install
-3. bun run build && bun run bootstrap
-4. Configure config.json (RPC endpoint + relayer key)
-5. bun packages/cli/bin/skandha.js standalone
-6. npx hardhat run scripts/deploy.ts --network sepolia
-7. npx hardhat run scripts/test4337.ts --network sepolia
+# --- One-time Skandha Setup ---
+1.  Clone Skandha → git checkout releases/v0.6
+2.  bun install && bun run build && bun run bootstrap
+3.  Configure config.json (RPC endpoint + relayer key)
+4.  bun packages/cli/bin/skandha.js standalone
+
+# --- Contract Deployment ---
+5.  npx hardhat run scripts/deploy.ts --network sepolia
+6.  npx hardhat run scripts/deployPaymaster.ts --network sepolia
+
+# --- Paymaster Setup ---
+7.  npx hardhat run scripts/checkStakeAndBal.ts --network sepolia
+8.  npx hardhat run scripts/addStake.ts --network sepolia
+
+# --- Send UserOperations ---
+9.  npx hardhat run scripts/test4337WithPaymaster.ts --network sepolia   # sponsored
+10. npx hardhat run scripts/test4337.ts --network sepolia                 # self-paid
 ```
 
 ---
@@ -147,22 +272,27 @@ All `BigInt` values — gas limits, fees, nonces — must be converted to hex st
 
 ```
 .
-├── artifacts/                  # Hardhat compilation artifacts
-├── cache/                      # Hardhat cache
+├── artifacts/                      # Hardhat compilation artifacts
+├── cache/                          # Hardhat cache
 ├── contracts/
-│   ├── BaseAccount.sol         # Abstract base account logic
-│   ├── Interfaces.sol          # Shared interfaces (IEntryPoint, etc.)
-│   ├── SmartAccount.sol        # ERC-4337 compatible smart account
-│   ├── SmartAccountFactory.sol # Factory for deploying smart accounts
-│   └── UserOperation.sol       # UserOperation struct & helpers
-├── ignition/                   # Hardhat Ignition deployment modules
+│   ├── BaseAccount.sol             # Abstract base account logic
+│   ├── CustomPaymaster.sol         # Verifying Paymaster (EntryPoint v0.6)
+│   ├── Interfaces.sol              # Shared interfaces (IEntryPoint, etc.)
+│   ├── SmartAccount.sol            # ERC-4337 compatible smart account
+│   ├── SmartAccountFactory.sol     # Factory for deploying smart accounts
+│   └── UserOperation.sol           # UserOperation struct & helpers
+├── ignition/                       # Hardhat Ignition deployment modules
 ├── scripts/
-│   ├── deploy.ts               # Deploys factory and account to Sepolia
-│   └── test4337.ts             # Builds, signs & sends a UserOperation
-├── skandha/                    # Skandha bundler (submodule / local clone)
-├── test/                       # Contract test files
-├── types/                      # TypeScript type definitions
-├── .env                        # Environment variables (never commit this)
+│   ├── addStake.ts                 # Stakes the Paymaster with the EntryPoint
+│   ├── checkStakeAndBal.ts         # Queries Paymaster deposit & stake status
+│   ├── deploy.ts                   # Deploys factory and account to Sepolia
+│   ├── deployPaymaster.ts          # Deploys and funds the CustomPaymaster
+│   ├── test4337.ts                 # Sends a self-paid UserOperation
+│   └── test4337WithPaymaster.ts    # Sends a Paymaster-sponsored UserOperation
+├── skandha/                        # Skandha bundler (submodule / local clone)
+├── test/                           # Contract test files
+├── types/                          # TypeScript type definitions
+├── .env                            # Environment variables (never commit this)
 ├── .gitignore
 ├── hardhat.config.ts
 ├── package.json
@@ -177,6 +307,7 @@ All `BigInt` values — gas limits, fees, nonces — must be converted to hex st
 
 - [ERC-4337 Specification](https://eips.ethereum.org/EIPS/eip-4337)
 - [Skandha Bundler](https://github.com/etherspot/skandha)
+- [@account-abstraction/contracts v0.6.0](https://www.npmjs.com/package/@account-abstraction/contracts/v/0.6.0)
 - [This Repository](https://github.com/Harish4586/smartAccount-skandhaV1-EntrypointV0.6)
 
 ---
