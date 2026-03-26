@@ -47,3 +47,7 @@ interface IAccount {
     ) external returns (uint256 validationData);
 
 }
+interface ITarget {
+    function setNumber(uint8 _number) external payable;
+    function number() external view returns (uint8);
+}
